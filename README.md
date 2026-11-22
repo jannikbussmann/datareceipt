@@ -4,7 +4,7 @@
 
 **DataReceipt makes the hidden trade in browsing data visible as a receipt.**
 
-A browser extension that shows you what your browsing data is worth. Every tracker request is detected in real time, attributed to a corporate entity, and translated into an estimated monetary value — displayed as a live "Digital Receipt" overlay on any page you visit.
+A browser extension that shows what companies earn by tracking your browsing. Third-party trackers are detected in real time, attributed to the company behind them, and turned into an estimate of the revenue that depends on tracking you — displayed as a live "Digital Receipt" overlay on any page you visit.
 
 By [Jannik Bussmann](https://jannikbussmann.de/projects/datareceipt) · [datareceipt.org](https://datareceipt.org) · [Get it for Firefox](https://addons.mozilla.org/firefox/addon/datareceipt/)
 
@@ -20,20 +20,42 @@ By [Jannik Bussmann](https://jannikbussmann.de/projects/datareceipt) · [datarec
 
 ## How it works
 
-1. The background service worker intercepts all HTTP requests via `webRequest`
-2. Each request is matched against a known tracker database (Google, Meta, Amazon, and 13 others)
-3. On the first match per company per page load, a revenue estimate is added to your running total
-4. The content script renders a "Digital Receipt" overlay with lifetime stats, a per-session note, and a breakdown by company
-5. Stats persist across sessions via `chrome.storage.local` and can be exported as PDF
+1. The background script observes network requests via `webRequest` (it never blocks or modifies them).
+2. Requests are matched by **hostname** against a curated list of ~60 tracking domains and endpoints (Google, Meta, Amazon, Criteo, The Trade Desk, …). Only **third-party** requests count — visiting google.com or amazon.de is not "being tracked".
+3. Each company is counted **at most once per page load**, and its estimated revenue is added to your running total.
+4. A "Digital Receipt" overlay shows the lifetime total, the value of the current page, and a ranking by company. It can be printed or saved as PDF as a receipt.
 
-**Revenue methodology:** Annual advertising revenue (fiscal year 2023, official reports) ÷ estimated tracked users ÷ estimated tracked pages per user per year. Each company is counted at most once per page load — multiple requests from the same tracker on a single page do not inflate the estimate.
+Everything happens locally. No data leaves the browser.
+
+---
+
+## Methodology
+
+DataReceipt estimates the revenue companies earn **by tracking you on third-party websites** — not their total advertising revenue. Most ad revenue of Google, Meta or Amazon is earned on their own platforms (Search, YouTube, Instagram, amazon.com) and is deliberately excluded.
+
+```
+value per page = revenue × tracking dependence ÷ (internet users × page views per user per year × reach) × regional factor
+```
+
+- **Revenue:** latest annual reports (FY2025); TikTok and X are third-party forecasts.
+- **Tracking dependence** — the share of revenue that would be lost without cross-site tracking, one concept for all companies: ads on other websites ~50%, search ads ~5%, social platforms ~9% (rough, evidence-based assumptions).
+- **Denominator:** all page views worldwide on which the company's trackers appear (ITU internet users × estimated page views per user × estimated tracker reach).
+
+For an average user, reach and page views only decide how the yearly amount is split across pages:
+
+| Average user per year | Low | **Central** | High |
+|---|---:|---:|---:|
+| Europe | €2 | **€12** | €23 |
+| US & Canada | $8 | **$38** | $123 |
+
+**This is an order-of-magnitude estimate, not a measurement.** All inputs, sources, ranges, a plausibility check against market data, and the limitations are documented in **[docs/METHODOLOGY.md](docs/METHODOLOGY.md)**. Corrections with better sources are very welcome.
 
 ---
 
 ## Installation
 
 ### Requirements
-- Node.js ≥ 16
+- Node.js ≥ 20.9
 - Yarn
 
 ### Chrome / Chromium
@@ -56,13 +78,7 @@ yarn build:firefox
 ```
 
 1. Open `about:debugging#/runtime/this-firefox`
-2. Click **Load Temporary Add-on** → select any file inside `build-firefox/`
-
-To create a distributable `.zip` for [addons.mozilla.org](https://addons.mozilla.org):
-
-```bash
-yarn package:firefox   # → dist/firefox/*.zip
-```
+2. Click **Load Temporary Add-on** → select `build-firefox/manifest.json`
 
 ---
 
@@ -70,19 +86,15 @@ yarn package:firefox   # → dist/firefox/*.zip
 
 | Command | Description |
 |---------|-------------|
-| `yarn build` | Development build → `build/` (Chrome) |
-| `yarn build:prod` | Production build → `build/` (Chrome) |
-| `yarn build:firefox` | Development build → `build-firefox/` (Firefox) |
-| `yarn build:firefox:prod` | Production build → `build-firefox/` (Firefox) |
-| `yarn dev` | Watch mode → `build/` (Chrome) |
-| `yarn dev:firefox` | Watch mode → `build-firefox/` (Firefox) |
-| `yarn format` | Run Prettier over `src/` |
-| `yarn lint:firefox` | Firefox compatibility lint via `web-ext` |
-| `yarn package:firefox` | Build + package Firefox zip → `dist/firefox/` |
+| `yarn build` / `yarn build:firefox` | Development build → `build/` / `build-firefox/` |
+| `yarn build:prod` / `yarn build:firefox:prod` | Production build |
+| `yarn dev` / `yarn dev:firefox` | Watch mode |
+| `yarn test` | Unit tests for tracker detection and the revenue model |
+| `yarn format` / `yarn format:check` | Prettier |
+| `yarn lint:firefox` | `web-ext lint` on the Firefox production build |
+| `yarn package:chrome` / `yarn package:firefox` | Production build + zip → `dist/` |
 
-After any `yarn build` or `yarn dev` change, reload the extension in the browser:
-- **Chrome:** `chrome://extensions` → click the reload icon
-- **Firefox:** `about:debugging` → Reload
+After a rebuild, reload the extension (`chrome://extensions` or `about:debugging`).
 
 ---
 
@@ -91,50 +103,23 @@ After any `yarn build` or `yarn dev` change, reload the extension in the browser
 ```
 src/
 ├── js/
-│   ├── tracker-config.js      # Tracker map, revenue weights & multipliers (single source of truth)
-│   ├── background.js          # Service worker: tracker detection, deduplication, storage
+│   ├── tracker-config.js      # Tracker list, third-party check, revenue model, regional factor
+│   ├── background.js          # Request observation, per-page dedup (storage.session), lifetime stats
 │   ├── content.js             # Content script entry
+│   ├── receipt.js             # Printable receipt page
 │   └── content/
-│       ├── overlay.js         # Digital Receipt overlay (closed Shadow DOM) + PDF export
+│       ├── overlay.js         # Digital Receipt overlay (closed Shadow DOM)
 │       ├── content.css        # Overlay styles (injected into the shadow root)
-│       ├── fonts.css          # @font-face rules (must live in the page document)
 │       ├── i18n.js            # Translations (12 languages)
-│       └── currency.js        # Currency conversion & formatting (16 currencies)
-├── fonts/                     # Inter (inlined as data URIs at build time)
-├── img/
-│   ├── icon-128.png
-│   └── icon-34.png
+│       └── currency.js        # Currency formatting (16 currencies, fixed rates)
+├── fonts/                     # Inter, loaded only inside the overlay
+├── img/                       # Extension icons
+├── receipt.html, receipt.css  # Receipt page
 ├── manifest.json              # Chrome (MV3)
-└── manifest.firefox.json      # Firefox (MV3, background.scripts)
+└── manifest.firefox.json      # Firefox (MV3)
+test/                          # node:test unit tests
+docs/METHODOLOGY.md            # Revenue model: inputs, sources, ranges, limitations
 ```
-
----
-
-## Revenue weights
-
-Weights are defined in `src/js/tracker-config.js` and imported by `background.js`. To update a weight, change it in one place only.
-
-The methodology and sources for each entity are documented inline in that file. In brief:
-
-| Entity | Weight (USD/page) | Primary source |
-|--------|-----------------:|----------------|
-| Google | $0.00106 | Alphabet Annual Report 2023 |
-| Meta | $0.00246 | Meta Annual Report 2023 |
-| Amazon | $0.00535 | Amazon Annual Report 2023 |
-| LinkedIn | $0.00767 | LinkedIn / Microsoft FY2023 (premium B2B CPM) |
-| Microsoft | $0.00146 | Microsoft Annual Report FY2023 |
-| TikTok | $0.00194 | ByteDance estimated revenue 2023 |
-| The Trade Desk | $0.00102 | TTD Annual Report 2023 |
-| Outbrain | $0.00057 | Outbrain Annual Report 2023 |
-| Twitter / X | $0.00056 | Estimated X ad revenue 2023 |
-| Taboola | $0.00049 | Taboola Annual Report 2023 |
-| Salesforce | $0.00055 | Salesforce Marketing Cloud estimated 2023 |
-| Reddit | $0.00100 | Reddit S-1 / estimated 2023 |
-| Criteo | $0.00033 | Criteo Annual Report 2023 |
-| Apple | $0.00020 | Minimal cross-site ad tracking; keywords are infra |
-| Adobe | $0.00018 | Adobe Experience Cloud 2023; Audience Manager sunset |
-| Oracle | $0.00005 | Oracle Advertising shut down June 2023 |
-| Unknown | $0.00030 | Fallback for unrecognised trackers |
 
 ---
 
@@ -142,10 +127,9 @@ The methodology and sources for each entity are documented inline in that file. 
 
 | Permission | Why |
 |-----------|-----|
-| `webRequest` | Intercept requests to detect trackers |
-| `tabs` | Send messages to content scripts; detect page navigation for deduplication |
-| `storage` | Persist lifetime stats and user settings |
-| `<all_urls>` host permission | Content script and request monitoring on all sites |
+| `webRequest` | Observe requests to detect trackers (read-only) |
+| `storage` | Lifetime stats, settings, and per-page state |
+| `<all_urls>` host permission | Observe requests and show the overlay on all sites |
 
 No data ever leaves the browser. The overlay is rendered inside a closed Shadow DOM, so the websites you visit cannot read your stats.
 

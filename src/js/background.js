@@ -1,155 +1,209 @@
 import {
-  REVENUE_WEIGHTS,
-  FALLBACK_WEIGHT,
-  isTracker,
-  getCorporateEntity,
-  getTrackingStreamKey,
-  getTrackerTypeMultiplier,
-  getRegionalMultiplier,
-  getSeasonalMultiplier,
-  getCategoryMultiplier,
-  getTimeOfDayMultiplier,
-  getProfileMultiplier,
-  getDeviceMultiplier,
+  getTrackerEntity,
+  getHostname,
+  isThirdParty,
+  getBaseWeight,
+  getRegionalFactor,
 } from "./tracker-config.js";
 
-// Cache static multipliers — don't change during a browser session.
-const REGIONAL_MULTIPLIER = getRegionalMultiplier();
-const DEVICE_MULTIPLIER = getDeviceMultiplier();
+const REGIONAL_FACTOR = getRegionalFactor(
+  Intl.DateTimeFormat().resolvedOptions().timeZone,
+);
+const MAX_ENTITIES = 200;
+const emptyStats = () => ({ total: 0, revenue: 0, entities: {} });
 
 // ---------------------------------------------------------------------------
-// Icon / badge
+// Global state: lifetime stats + enabled flag (chrome.storage.local).
+// Kept in memory after first load; MV3 workers restart often, so everything is
+// re-hydrated lazily. Pending callbacks drain in order once loaded.
 // ---------------------------------------------------------------------------
+
+let state = null; // { stats, enabled }
+const pendingState = [];
+
+function withState(callback) {
+  if (state !== null) return callback(state);
+  pendingState.push(callback);
+  if (pendingState.length === 1) {
+    chrome.storage.local.get(["lifetime_stats", "enabled"], (res) => {
+      state = {
+        stats: res.lifetime_stats || emptyStats(),
+        enabled: res.enabled !== false,
+      };
+      while (pendingState.length > 0) pendingState.shift()(state);
+    });
+  }
+}
 
 const applyBadge = (enabled) => {
   chrome.action.setBadgeText({ text: enabled ? "" : "OFF" });
   chrome.action.setBadgeBackgroundColor({ color: "#cc0000" });
 };
 
-chrome.storage.local.get(["enabled"], (result) => {
-  applyBadge(result.enabled !== false);
-});
+withState((s) => applyBadge(s.enabled));
 
-// Invalidate stats cache when storage is cleared (e.g. user reset)
-chrome.storage.onChanged.addListener((changes) => {
-  if ("lifetime_stats" in changes && !changes.lifetime_stats.newValue) {
-    statsCache = null;
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || state === null) return;
+  if ("enabled" in changes) {
+    state.enabled = changes.enabled.newValue !== false;
+    applyBadge(state.enabled);
   }
 });
 
-chrome.action.onClicked.addListener((tab) => {
-  chrome.storage.local.get(["enabled"], (result) => {
-    const next = result.enabled === false;
-    chrome.storage.local.set({ enabled: next }, () => {
-      applyBadge(next);
-      if (tab.id) {
-        chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_TOPOGRAPHY" }, () => void chrome.runtime.lastError);
+chrome.action.onClicked.addListener(() => {
+  withState((s) => chrome.storage.local.set({ enabled: !s.enabled }));
+});
+
+// ---------------------------------------------------------------------------
+// Per-tab page state (chrome.storage.session — survives worker restarts, is
+// cleared when the browser closes). Reset on every top-level navigation.
+// Each company is counted at most once per page load.
+// ---------------------------------------------------------------------------
+
+const tabs = new Map(); // tabId -> { seen: Set, revenue, count, pageHost }
+const tabLoads = new Map(); // tabId -> Promise during hydration
+const tabKey = (tabId) => `tab:${tabId}`;
+
+function newPage(pageHost) {
+  return { seen: new Set(), revenue: 0, count: 0, pageHost };
+}
+
+function getTab(tabId) {
+  if (tabs.has(tabId)) return Promise.resolve(tabs.get(tabId));
+  if (!tabLoads.has(tabId)) {
+    tabLoads.set(
+      tabId,
+      chrome.storage.session.get(tabKey(tabId)).then((res) => {
+        tabLoads.delete(tabId);
+        if (!tabs.has(tabId)) {
+          const saved = res[tabKey(tabId)];
+          tabs.set(
+            tabId,
+            saved ? { ...saved, seen: new Set(saved.seen) } : newPage(""),
+          );
+        }
+        return tabs.get(tabId);
+      }),
+    );
+  }
+  return tabLoads.get(tabId);
+}
+
+function saveTab(tabId, page) {
+  chrome.storage.session.set({
+    [tabKey(tabId)]: { ...page, seen: [...page.seen] },
+  });
+}
+
+function sendPageStats(tabId, page) {
+  chrome.tabs.sendMessage(
+    tabId,
+    { type: "PAGE_STATS", revenue: page.revenue, count: page.count },
+    () => void chrome.runtime.lastError,
+  );
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  tabs.delete(tabId);
+  chrome.storage.session.remove(tabKey(tabId));
+});
+
+// ---------------------------------------------------------------------------
+// Request observation
+// ---------------------------------------------------------------------------
+
+// New top-level navigation → new page state
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    if (details.tabId < 0) return;
+    const page = newPage(getHostname(details.url));
+    tabs.set(details.tabId, page);
+    saveTab(details.tabId, page);
+  },
+  { urls: ["<all_urls>"], types: ["main_frame"] },
+);
+
+// Trackers are counted only when the request is actually sent — requests
+// blocked by an ad blocker or the browser never reach onSendHeaders.
+chrome.webRequest.onSendHeaders.addListener(
+  (details) => {
+    const { tabId } = details;
+    if (tabId < 0 || details.type === "main_frame") return;
+
+    const entity = getTrackerEntity(details.url);
+    if (entity === null) return;
+
+    getTab(tabId).then((page) => {
+      const pageHost =
+        page.pageHost ||
+        getHostname(
+          details.documentUrl || details.originUrl || details.initiator || "",
+        );
+      if (!isThirdParty(getHostname(details.url), pageHost)) return;
+      if (page.seen.has(entity)) return;
+
+      withState((s) => {
+        if (!s.enabled) return;
+        const isNew = !Object.hasOwn(s.stats.entities, entity);
+        if (isNew && Object.keys(s.stats.entities).length >= MAX_ENTITIES)
+          return;
+
+        page.seen.add(entity);
+        const value = getBaseWeight(entity) * REGIONAL_FACTOR;
+
+        if (isNew) s.stats.entities[entity] = { count: 0, revenue: 0 };
+        s.stats.total++;
+        s.stats.revenue += value;
+        s.stats.entities[entity].count++;
+        s.stats.entities[entity].revenue += value;
+        page.count++;
+        page.revenue += value;
+
+        chrome.storage.local.set({ lifetime_stats: s.stats });
+        saveTab(tabId, page);
+        sendPageStats(tabId, page);
+      });
+    });
+  },
+  { urls: ["<all_urls>"] },
+);
+
+// ---------------------------------------------------------------------------
+// Messages from the content script / receipt page
+// ---------------------------------------------------------------------------
+
+function resetAll() {
+  withState((s) => {
+    s.stats = emptyStats();
+    chrome.storage.local.remove("lifetime_stats");
+    for (const [tabId, page] of tabs) {
+      page.revenue = 0;
+      page.count = 0;
+      saveTab(tabId, page);
+    }
+    // Pages not loaded in memory: zero their persisted totals as well
+    chrome.storage.session.get(null).then((all) => {
+      for (const [key, page] of Object.entries(all)) {
+        if (key.startsWith("tab:") && !tabs.has(Number(key.slice(4)))) {
+          chrome.storage.session.set({
+            [key]: { ...page, revenue: 0, count: 0 },
+          });
+        }
       }
     });
   });
-});
-
-// ---------------------------------------------------------------------------
-// Deduplication — one count per tracking stream per tab per page load.
-// Using stream keys (not raw entity names) so Google Analytics and DoubleClick
-// are counted as separate revenue streams on the same page.
-// ---------------------------------------------------------------------------
-
-const seenPerTab = new Map();
-
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.status === "loading") seenPerTab.set(tabId, new Set());
-});
-
-chrome.tabs.onRemoved.addListener((tabId) => {
-  seenPerTab.delete(tabId);
-});
-
-// ---------------------------------------------------------------------------
-// Stats cache — eliminates TOCTOU race condition on storage reads.
-// JS is single-threaded: once loaded, all in-memory updates are synchronous
-// and atomic. Storage writes are fire-and-forget for persistence across
-// service worker restarts. Pending callbacks drain in order on first load.
-// ---------------------------------------------------------------------------
-
-const MAX_ENTITIES = 200;
-let statsCache = null;
-const pendingCallbacks = [];
-
-function withStats(callback) {
-  if (statsCache !== null) {
-    callback(statsCache);
-    return;
-  }
-  pendingCallbacks.push(callback);
-  if (pendingCallbacks.length === 1) {
-    chrome.storage.local.get(["lifetime_stats"], (result) => {
-      statsCache = result.lifetime_stats || { total: 0, revenue: 0, entities: {} };
-      while (pendingCallbacks.length > 0) pendingCallbacks.shift()(statsCache);
-    });
-  }
 }
 
-// ---------------------------------------------------------------------------
-// Request interception
-// ---------------------------------------------------------------------------
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || !message) return;
 
-chrome.webRequest.onBeforeRequest.addListener(
-  (details) => {
-    if (details.tabId === -1 || !isTracker(details.url)) return;
-
-    const entity = getCorporateEntity(details.url);
-    const streamKey = getTrackingStreamKey(entity, details.url);
-    if (streamKey === null) return; // CDN / infrastructure — no revenue attribution
-
-    // Block prototype pollution via crafted tracker domain names
-    if (entity === "__proto__" || entity === "constructor" || entity === "prototype") return;
-
-    if (!seenPerTab.has(details.tabId)) seenPerTab.set(details.tabId, new Set());
-    const seen = seenPerTab.get(details.tabId);
-    if (seen.has(streamKey)) return;
-    seen.add(streamKey);
-
-    const pageUrl = details.documentUrl || details.initiator || "";
-
-    withStats((stats) => {
-      const uniqueEntityCount = Object.keys(stats.entities).length;
-
-      const weight =
-        (REVENUE_WEIGHTS[entity] || FALLBACK_WEIGHT) *
-        getTrackerTypeMultiplier(details.url) *
-        REGIONAL_MULTIPLIER *
-        getSeasonalMultiplier() *
-        getCategoryMultiplier(pageUrl) *
-        getTimeOfDayMultiplier() *
-        getProfileMultiplier(uniqueEntityCount) *
-        DEVICE_MULTIPLIER;
-
-      const isNew = !Object.hasOwn(stats.entities, entity);
-      if (isNew) {
-        if (uniqueEntityCount >= MAX_ENTITIES) return;
-        stats.entities[entity] = { count: 0, revenue: 0 };
-      }
-
-      stats.total++;
-      stats.revenue += weight;
-      stats.entities[entity].count++;
-      stats.entities[entity].revenue += weight;
-
-      // Persist in background — cache is already updated above
-      chrome.storage.local.set({ lifetime_stats: stats }, () => {
-        if (chrome.runtime.lastError) {
-          console.warn("DataReceipt: storage write failed:", chrome.runtime.lastError.message);
-        }
-      });
-
-      chrome.tabs.sendMessage(details.tabId, {
-        type: "TRACKER_DETECTED",
-        entity,
-        weight,
-        lifetime_stats: stats,
-      }, () => void chrome.runtime.lastError);
-    });
-  },
-  { urls: ["<all_urls>"] }
-);
+  if (message.type === "GET_PAGE_STATS" && sender.tab) {
+    getTab(sender.tab.id).then((page) =>
+      sendResponse({ revenue: page.revenue, count: page.count }),
+    );
+    return true; // async response
+  }
+  if (message.type === "RESET") resetAll();
+  if (message.type === "OPEN_RECEIPT")
+    chrome.tabs.create({ url: chrome.runtime.getURL("receipt.html") });
+});

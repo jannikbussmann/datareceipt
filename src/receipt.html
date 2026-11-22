@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DataReceipt</title>
+    <link rel="icon" href="icon-34.png" />
+    <link rel="stylesheet" href="receipt.css" />
+  </head>
+  <body>
+    <main class="receipt" aria-labelledby="r-title">
+      <h1 id="r-title">DATA RECEIPT</h1>
+      <p id="r-tagline"></p>
+      <p id="r-date"></p>
+
+      <div class="total-box">
+        <div id="r-total" class="total-value"></div>
+        <div id="r-total-label" class="total-label"></div>
+      </div>
+
+      <hr />
+      <div class="row head">
+        <span id="r-col-company"></span>
+        <span id="r-col-value"></span>
+      </div>
+      <div id="r-list"></div>
+      <hr />
+
+      <div class="row total-row">
+        <span>TOTAL</span>
+        <span id="r-total-bottom"></span>
+      </div>
+
+      <p class="url">https://datareceipt.org/</p>
+      <p id="r-note" class="note"></p>
+    </main>
+
+    <button id="r-print" type="button" class="print-btn"></button>
+    <script src="receipt.bundle.js"></script>
+  </body>
+</html>
