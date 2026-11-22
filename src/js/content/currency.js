@@ -1,3 +1,5 @@
+// Fixed exchange rates (USD base, 2024). Values are order-of-magnitude
+// estimates, so live rates would add network access without adding accuracy.
 const RATES = {
   USD: 1.0,
   EUR: 0.92,
@@ -17,33 +19,34 @@ const RATES = {
   SGD: 1.35,
 };
 
-const SYMBOLS = {
-  USD: "$",
-  EUR: "€",
-  GBP: "£",
-  JPY: "¥",
-  CHF: "Fr",
-  CNY: "¥",
-  KRW: "₩",
-  CAD: "C$",
-  AUD: "A$",
-  BRL: "R$",
-  INR: "₹",
-  RUB: "₽",
-  TRY: "₺",
-  AED: "د.إ",
-  MXN: "$",
-  SGD: "S$",
+const LOCALES = {
+  DE: "de-DE",
+  EN: "en-US",
+  FR: "fr-FR",
+  ES: "es-ES",
+  IT: "it-IT",
+  NL: "nl-NL",
+  PT: "pt-PT",
+  RU: "ru-RU",
+  TR: "tr-TR",
+  ZH: "zh-CN",
+  JA: "ja-JP",
+  KO: "ko-KR",
 };
-
-const NO_DECIMALS = new Set(["JPY", "KRW"]);
 
 export const SUPPORTED_CURRENCIES = Object.keys(RATES);
 
-export const formatCurrency = (val, currency, precision = 2) => {
-  const amount = val * (RATES[currency] || 1);
-  const sym = SYMBOLS[currency] || "$";
-  return NO_DECIMALS.has(currency)
-    ? `${sym}${Math.round(amount)}`
-    : `${sym}${amount.toFixed(precision)}`;
+export const getLocale = (lang) => LOCALES[lang] || "en-US";
+
+/** Amounts below 1 are shown with 2 significant digits (e.g. 0.0053 €) — more would imply false precision. */
+export const formatCurrency = (usd, currency, lang) => {
+  const amount = (usd || 0) * (RATES[currency] || 1);
+  const small = amount > 0 && amount < 1;
+  return new Intl.NumberFormat(getLocale(lang), {
+    style: "currency",
+    currency: RATES[currency] ? currency : "USD",
+    ...(small
+      ? { maximumSignificantDigits: 2 }
+      : { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+  }).format(amount);
 };
