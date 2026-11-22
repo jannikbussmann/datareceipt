@@ -1,8 +1,24 @@
 # DataReceipt
 
+![DataReceipt — a pile of printed data receipts](docs/images/sculpture.jpg)
+
+**DataReceipt makes the hidden trade in browsing data visible as a receipt.**
+
 A browser extension that shows you what your browsing data is worth. Every tracker request is detected in real time, attributed to a corporate entity, and translated into an estimated monetary value — displayed as a live "Digital Receipt" overlay on any page you visit.
 
-By [Jannik Bussmann](https://jannikbussmann.de/)
+By [Jannik Bussmann](https://jannikbussmann.de/projects/datareceipt) · [datareceipt.org](https://datareceipt.org) · [Get it for Firefox](https://addons.mozilla.org/firefox/addon/datareceipt/)
+
+<table>
+  <tr>
+    <td><img src="docs/images/browser-weathercom.jpg" alt="Digital Receipt overlay on weather.com"></td>
+    <td><img src="docs/images/browser-bookingcom.jpg" alt="Digital Receipt overlay on booking.com"></td>
+    <td><img src="docs/images/browser-wikipedia.jpg" alt="Digital Receipt overlay on Wikipedia"></td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="docs/images/receipt.jpg" alt="Printed data receipt listing the companies that profited from one's browsing data" width="420">
+</p>
 
 ---
 
