@@ -16,10 +16,6 @@ By [Jannik Bussmann](https://jannikbussmann.de/projects/datareceipt) · [datarec
   </tr>
 </table>
 
-<p align="center">
-  <img src="docs/images/receipt.jpg" alt="Printed data receipt listing the companies that profited from one's browsing data" width="420">
-</p>
-
 ---
 
 ## How it works
