@@ -1,0 +1,16 @@
+node_modules
+build
+build-firefox
+dist
+secrets.*.js
+.idea
+.env
+
+.DS_Store
+*.map
+.claude/
+
+website/
+CLAUDE.md
+store/
+screenshots/

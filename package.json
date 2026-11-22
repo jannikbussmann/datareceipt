@@ -1,0 +1,31 @@
+{
+  "name": "datareceipt",
+  "version": "1.0.3",
+  "description": "See what your browsing data is worth. Detects trackers in real time and shows how much corporations earn from your data.",
+  "scripts": {
+    "build": "webpack --config webpack.config.js",
+    "build:prod": "NODE_ENV=production webpack --config webpack.config.js",
+    "build:firefox": "BROWSER=firefox webpack --config webpack.config.js",
+    "build:firefox:prod": "NODE_ENV=production BROWSER=firefox webpack --config webpack.config.js",
+    "dev": "webpack --watch --config webpack.config.js",
+    "dev:firefox": "BROWSER=firefox webpack --watch --config webpack.config.js",
+    "format": "prettier --write src webpack.config.js",
+    "package:firefox": "yarn build:firefox && web-ext build --source-dir build-firefox --artifacts-dir dist/firefox",
+    "lint:firefox": "yarn build:firefox && web-ext lint --source-dir build-firefox"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.2",
+    "babel-loader": "^9.0.0",
+    "copy-webpack-plugin": "^14",
+    "css-loader": "^7.1.0",
+    "prettier": "^3.0.0",
+    "style-loader": "^4.0.0",
+    "web-ext": "^10.0.0",
+    "webpack": "^5.105.0",
+    "webpack-cli": "^5.1.0"
+  },
+  "dependencies": {
+    "jspdf": "^4.2.1"
+  }
+}

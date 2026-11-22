@@ -1,0 +1,257 @@
+/* Injected into a closed shadow root — host page cannot read or style the overlay. */
+:host {
+  all: initial;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  z-index: 99999999;
+  pointer-events: none;
+}
+
+#digital-receipt {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 320px;
+  background: #ffffff;
+  color: #1a1a1a;
+  box-shadow: 0 10px 50px rgba(0, 0, 0, 0.2);
+  border-radius: 16px;
+  padding: 20px;
+  font-family: "Inter", sans-serif;
+  pointer-events: all;
+  border: 1px solid #eee;
+  animation: slideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  max-height: 90vh;
+  overflow-y: auto;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#digital-receipt.minimized {
+  width: 180px;
+  padding: 12px 15px;
+  max-height: 54px;
+}
+
+#digital-receipt.minimized #receipt-body {
+  display: none;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.receipt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 15px;
+}
+
+#digital-receipt.minimized .receipt-header {
+  margin-bottom: 0;
+  align-items: center;
+}
+
+.project-name {
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #bbb;
+  margin-bottom: 2px;
+}
+
+.receipt-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #000;
+  letter-spacing: -0.02em;
+}
+
+#digital-receipt.minimized .receipt-title {
+  font-size: 11px;
+}
+
+#minimize-btn {
+  background: #f0f0f0;
+  border: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #888;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  padding: 0;
+  margin: 0;
+  position: relative;
+}
+
+#minimize-btn:hover {
+  background: #e0e0e0;
+  color: #000;
+}
+
+/* Perfect CSS icon instead of text character */
+#minimize-btn::before {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 2px;
+  background: currentColor;
+}
+
+#digital-receipt.minimized #minimize-btn::after {
+  content: "";
+  position: absolute;
+  width: 2px;
+  height: 10px;
+  background: currentColor;
+}
+
+.main-stats {
+  margin-bottom: 15px;
+}
+
+.main-stats .label {
+  font-size: 12px;
+  color: #777;
+  margin-bottom: 4px;
+}
+
+#total-revenue-display {
+  font-size: 42px;
+  font-weight: 800;
+  color: #000;
+  letter-spacing: -0.04em;
+  margin-bottom: 6px;
+}
+
+#session-revenue-note {
+  font-size: 12px;
+  color: #555;
+  line-height: 1.4;
+}
+
+.divider {
+  height: 1px;
+  background: #f0f0f0;
+  margin: 15px 0;
+}
+
+.section-title {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #999;
+  margin-bottom: 10px;
+  letter-spacing: 0.05em;
+}
+
+#entities-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.no-data {
+  font-size: 12px;
+  color: #bbb;
+  font-style: italic;
+}
+
+.receipt-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.company-name {
+  font-weight: 600;
+  color: #222;
+  text-transform: capitalize;
+}
+
+.company-value {
+  font-family: "Inter", monospace;
+  color: #000;
+  font-weight: 600;
+}
+
+.secondary-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: 10px;
+  font-family: "Inter", sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  color: #ccc;
+  cursor: pointer;
+  text-align: left;
+}
+
+.settings-row {
+  display: flex !important;
+  gap: 8px;
+  margin-top: 15px;
+}
+
+.receipt-select {
+  background: #f8f8f8 !important;
+  border: 1px solid #eee !important;
+  padding: 6px 8px !important;
+  border-radius: 8px !important;
+  font-family: "Inter", sans-serif !important;
+  font-size: 11px !important;
+  color: #666 !important;
+  flex: 1 !important;
+  cursor: pointer !important;
+  appearance: auto !important;
+}
+
+.footer-links {
+  margin-top: 15px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 10px;
+}
+
+.footer-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: "Inter", sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  color: #ccc;
+  cursor: pointer;
+}
+
+.audit-note {
+  margin-top: 12px;
+  font-size: 10px;
+  color: #999;
+  line-height: 1.6;
+  background: #fafafa;
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px solid #f0f0f0;
+}
+
+.hidden {
+  display: none !important;
+}
